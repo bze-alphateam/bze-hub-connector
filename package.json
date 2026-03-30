@@ -1,6 +1,6 @@
 {
   "name": "@bze/hub-connector",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Connect any BZE dApp to BZE Hub app — creates a Keplr-compatible wallet bridge via postMessage",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
