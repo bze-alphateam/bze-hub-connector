@@ -33,6 +33,9 @@ let hubConfig: HubConfig | null = null;
  * ```
  */
 export async function initHubConnector(): Promise<boolean> {
+  // SSR guard — do nothing on server
+  if (typeof window === "undefined") return false;
+
   // Not in an iframe? Not in Hub.
   if (window.parent === window) return false;
 
@@ -98,6 +101,7 @@ export async function initHubConnector(): Promise<boolean> {
  * Returns false until initHubConnector() completes successfully.
  */
 export function isInHub(): boolean {
+  if (typeof window === "undefined") return false;
   return hubDetected;
 }
 
