@@ -1,16 +1,26 @@
 import { sendToHub } from "./bridge";
+import { waitForHandshake } from "./handshake";
 import type { Key, OfflineSigner, OfflineAminoSigner } from "./types";
+
+/** Ensure handshake is done before any bridge call */
+async function ensureReady(): Promise<void> {
+  const detected = await waitForHandshake();
+  if (!detected) {
+    throw new Error("Not connected to BZE Hub");
+  }
+}
 
 /** Create and install the Keplr-compatible API on window */
 export function installKeplr() {
   const keplr = {
     async enable(chainId: string): Promise<void> {
+      await ensureReady();
       await sendToHub("enable", [chainId]);
     },
 
     async getKey(chainId: string): Promise<Key> {
+      await ensureReady();
       const result = (await sendToHub("getKey", [chainId])) as Key;
-      // Ensure pubKey and address are Uint8Array (they arrive as arrays over postMessage)
       if (result.pubKey && Array.isArray(result.pubKey)) {
         result.pubKey = new Uint8Array(result.pubKey);
       }
@@ -66,6 +76,7 @@ export function installKeplr() {
       signer: string,
       signDoc: unknown
     ): Promise<unknown> {
+      await ensureReady();
       return sendToHub("signDirect", [chainId, signer, signDoc]);
     },
 
@@ -74,10 +85,12 @@ export function installKeplr() {
       signer: string,
       signDoc: unknown
     ): Promise<unknown> {
+      await ensureReady();
       return sendToHub("signAmino", [chainId, signer, signDoc]);
     },
 
     async experimentalSuggestChain(chainInfo: unknown): Promise<void> {
+      await ensureReady();
       await sendToHub("suggestChain", [chainInfo]);
     },
 
@@ -86,6 +99,7 @@ export function installKeplr() {
       signer: string,
       data: string
     ): Promise<unknown> {
+      await ensureReady();
       return sendToHub("signArbitrary", [chainId, signer, data]);
     },
 
@@ -98,7 +112,6 @@ export function installKeplr() {
     },
   };
 
-  // Install on window
   (window as any).keplr = keplr;
   (window as any).getOfflineSigner = keplr.getOfflineSigner.bind(keplr);
   (window as any).getOfflineSignerOnlyAmino =

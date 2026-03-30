@@ -9,8 +9,8 @@ import {
 import { handleBridgeResponse, isBridgeResponse } from "./bridge";
 import { installKeplr } from "./keplr";
 import { writeEndpointsToStorage } from "./storage";
+import { resolveHandshake, isHubDetected, isHandshakeComplete } from "./handshake";
 
-let hubDetected = false;
 let hubConfig: HubConfig | null = null;
 
 /**
@@ -18,33 +18,43 @@ let hubConfig: HubConfig | null = null;
  *
  * Call this once at app startup (before React mounts if possible).
  * If running inside BZE Hub, it:
- *   - Creates window.keplr (Keplr-compatible wallet API)
+ *   - Creates window.keplr IMMEDIATELY (so wallet libraries detect it)
+ *   - Performs a handshake with the Hub shell
  *   - Writes proxy endpoints to localStorage
  *   - Listens for account/endpoint changes from the Hub shell
  *
  * If NOT running inside BZE Hub, it does nothing.
  *
  * @returns A promise that resolves to true if running in Hub, false otherwise.
- *
- * @example
- * ```ts
- * import { initHubConnector } from '@bze/hub-connector';
- * initHubConnector();
- * ```
  */
 export async function initHubConnector(): Promise<boolean> {
-  // SSR guard — do nothing on server
+  // SSR guard
   if (typeof window === "undefined") return false;
 
   // Not in an iframe? Not in Hub.
-  if (window.parent === window) return false;
+  if (window.parent === window) {
+    resolveHandshake(false);
+    return false;
+  }
 
   // Already initialized?
-  if (hubDetected) return true;
+  if (isHandshakeComplete()) return isHubDetected();
+
+  // Install window.keplr IMMEDIATELY so wallet libraries detect it on scan.
+  // The keplr methods internally wait for the handshake before sending requests.
+  installKeplr();
+
+  // Dispatch keplr_keystorechange so libraries re-check for keplr
+  window.dispatchEvent(new Event("keplr_keystorechange"));
 
   return new Promise<boolean>((resolve) => {
     const timeout = setTimeout(() => {
       window.removeEventListener("message", onMessage);
+      // Handshake failed — remove the placeholder keplr
+      delete (window as any).keplr;
+      delete (window as any).getOfflineSigner;
+      delete (window as any).getOfflineSignerOnlyAmino;
+      resolveHandshake(false);
       resolve(false);
     }, 500);
 
@@ -52,87 +62,77 @@ export async function initHubConnector(): Promise<boolean> {
       const data = event.data;
       if (!data || typeof data !== "object") return;
 
-      // Handshake response
       if (data.type === MSG_HANDSHAKE_ACK && data.config) {
         clearTimeout(timeout);
         window.removeEventListener("message", onMessage);
 
         const config = data.config as HubConfig;
 
-        // Sanity check — is this a valid Hub config?
         if (!config.chainId || !config.proxyRest || !config.proxyRpc) {
           console.warn("[hub-connector] invalid handshake config, ignoring");
+          delete (window as any).keplr;
+          resolveHandshake(false);
           resolve(false);
           return;
         }
 
-        hubDetected = true;
         hubConfig = config;
-
-        // Install Keplr bridge
-        installKeplr();
 
         // Write proxy endpoints to localStorage
         writeEndpointsToStorage(config);
 
-        // Set up persistent listener for ongoing messages
+        // Set up persistent listener
         setupPersistentListener();
 
-        // Signal that Keplr is available
+        // Signal that keplr is ready with real data
         window.dispatchEvent(new Event("keplr_keystorechange"));
 
         console.log(
           `[hub-connector] connected to BZE Hub (chain: ${config.chainId}, address: ${config.activeAddress})`
         );
 
+        resolveHandshake(true);
         resolve(true);
       }
     }
 
     window.addEventListener("message", onMessage);
-
-    // Send handshake
     window.parent.postMessage({ type: MSG_HANDSHAKE }, "*");
   });
 }
 
 /**
  * Check if currently running inside BZE Hub.
- * Returns false until initHubConnector() completes successfully.
  */
 export function isInHub(): boolean {
   if (typeof window === "undefined") return false;
-  return hubDetected;
+  return isHubDetected();
 }
 
 /**
  * Get the Hub configuration (only available after successful init).
- * Returns null if not in Hub.
  */
 export function getHubConfig(): HubConfig | null {
   return hubConfig;
 }
 
-// --- Persistent listener for ongoing communication ---
+// --- Persistent listener ---
 
 function setupPersistentListener() {
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data || typeof data !== "object") return;
 
-    // Bridge responses (for signing, getKey, etc.)
     if (isBridgeResponse(data)) {
       handleBridgeResponse(data);
       return;
     }
 
-    // Account changed
     if (data.type === MSG_ACCOUNT_CHANGED) {
       window.dispatchEvent(new Event("keplr_keystorechange"));
       return;
     }
 
-    // Endpoints changed (node synced/desynced)
     if (data.type === MSG_ENDPOINTS_CHANGED && hubConfig && data.endpoints) {
       hubConfig.proxyRest = data.endpoints.proxyRest || hubConfig.proxyRest;
       hubConfig.proxyRpc = data.endpoints.proxyRpc || hubConfig.proxyRpc;
@@ -141,9 +141,7 @@ function setupPersistentListener() {
       return;
     }
 
-    // Theme changed
     if (data.type === MSG_THEME_CHANGED && data.theme) {
-      // Emit a custom event that the dApp can listen for
       window.dispatchEvent(
         new CustomEvent("bze-hub:theme-changed", { detail: data.theme })
       );
@@ -152,5 +150,4 @@ function setupPersistentListener() {
   });
 }
 
-// Re-export types for consumers
 export type { HubConfig, Key, OfflineSigner, OfflineAminoSigner } from "./types";
