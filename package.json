@@ -13,11 +13,13 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "bze",
@@ -26,10 +28,24 @@
     "keplr",
     "wallet",
     "hub",
-    "connector"
+    "connector",
+    "blockchain",
+    "web3"
   ],
   "author": "BZE Alpha Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bze-alphateam/hub-connector"
+  },
+  "homepage": "https://github.com/bze-alphateam/hub-connector#readme",
+  "bugs": {
+    "url": "https://github.com/bze-alphateam/hub-connector/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
   "devDependencies": {
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
