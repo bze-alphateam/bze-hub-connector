@@ -12,6 +12,17 @@ import { writeEndpointsToStorage } from "./storage";
 import { resolveHandshake, isHubDetected, isHandshakeComplete, subscribeHandshake } from "./handshake";
 
 let hubConfig: HubConfig | null = null;
+let storageKeyOverride: string | undefined;
+
+export interface HubConnectorOptions {
+  /**
+   * Override the storageKeyVersion used when writing proxy endpoints to localStorage.
+   * Each dApp has its own version (dex='3', burner='2', staking='4') set via setStorageKeyVersion().
+   * The Hub shell sends '1' which doesn't match — pass the app's version here so
+   * the hub-connector writes to the same localStorage key the app reads from.
+   */
+  storageKeyVersion?: string;
+}
 
 /**
  * Initialize the BZE Hub connector.
@@ -25,9 +36,10 @@ let hubConfig: HubConfig | null = null;
  *
  * If NOT running inside BZE Hub, it does nothing.
  *
+ * @param options Optional configuration.
  * @returns A promise that resolves to true if running in Hub, false otherwise.
  */
-export async function initHubConnector(): Promise<boolean> {
+export async function initHubConnector(options?: HubConnectorOptions): Promise<boolean> {
   // SSR guard
   if (typeof window === "undefined") return false;
 
@@ -35,6 +47,11 @@ export async function initHubConnector(): Promise<boolean> {
   if (window.parent === window) {
     resolveHandshake(false);
     return false;
+  }
+
+  // Store the override for use in writeEndpointsToStorage
+  if (options?.storageKeyVersion) {
+    storageKeyOverride = options.storageKeyVersion;
   }
 
   // Already initialized?
@@ -78,8 +95,8 @@ export async function initHubConnector(): Promise<boolean> {
 
         hubConfig = config;
 
-        // Write proxy endpoints to localStorage
-        writeEndpointsToStorage(config);
+        // Write proxy endpoints to localStorage (use app's key, not Hub's)
+        writeEndpointsToStorage(config, storageKeyOverride);
 
         // Set up persistent listener
         setupPersistentListener();
@@ -136,7 +153,7 @@ function setupPersistentListener() {
     if (data.type === MSG_ENDPOINTS_CHANGED && hubConfig && data.endpoints) {
       hubConfig.proxyRest = data.endpoints.proxyRest || hubConfig.proxyRest;
       hubConfig.proxyRpc = data.endpoints.proxyRpc || hubConfig.proxyRpc;
-      writeEndpointsToStorage(hubConfig);
+      writeEndpointsToStorage(hubConfig, storageKeyOverride);
       window.dispatchEvent(new Event("keplr_keystorechange"));
       return;
     }

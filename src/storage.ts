@@ -6,9 +6,14 @@ import type { HubConfig } from "./types";
  *
  * Key format: {storageKeyVersion}-{chainId}:bze_app_settings
  * Value format: { data: JSON.stringify(settings), expiry: 0 }
+ *
+ * @param config The Hub config from the handshake.
+ * @param storageKeyOverride If provided, overrides config.storageKeyVersion.
+ *   Each dApp sets its own version via setStorageKeyVersion() — pass it here
+ *   so the hub-connector writes to the correct localStorage key.
  */
-export function writeEndpointsToStorage(config: HubConfig) {
-  const key = `${config.storageKeyVersion}-${config.chainId}:bze_app_settings`;
+export function writeEndpointsToStorage(config: HubConfig, storageKeyOverride?: string) {
+  const key = `${storageKeyOverride || config.storageKeyVersion}-${config.chainId}:bze_app_settings`;
 
   const settings = {
     endpoints: {
