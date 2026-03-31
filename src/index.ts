@@ -9,7 +9,7 @@ import {
 import { handleBridgeResponse, isBridgeResponse } from "./bridge";
 import { installKeplr } from "./keplr";
 import { writeEndpointsToStorage } from "./storage";
-import { resolveHandshake, isHubDetected, isHandshakeComplete } from "./handshake";
+import { resolveHandshake, isHubDetected, isHandshakeComplete, subscribeHandshake } from "./handshake";
 
 let hubConfig: HubConfig | null = null;
 
@@ -148,6 +148,26 @@ function setupPersistentListener() {
       return;
     }
   });
+}
+
+// --- React hook ---
+
+import { useSyncExternalStore } from "react";
+
+/**
+ * React hook that returns `true` when the app is running inside BZE Hub.
+ *
+ * Unlike the static `isInHub()`, this hook triggers a re-render when the
+ * handshake resolves, so components always reflect the correct state.
+ */
+export function useIsInHub(): boolean {
+  return useSyncExternalStore(
+    subscribeHandshake,
+    // Client snapshot
+    () => isHubDetected(),
+    // Server snapshot (SSR)
+    () => false,
+  );
 }
 
 export type { HubConfig, Key, OfflineSigner, OfflineAminoSigner } from "./types";
